@@ -45,7 +45,7 @@ def send_notification(reason, repository):
     )
     print(f"{reason} in {repository}")
 
-def single_cycle(last_modified: None) -> (int, str):
+def single_cycle(last_modified: None, ids: set) -> (int, str):
     """
     Run a single cycle of polling for updates.
     Returns: (seconds to wait before next poll, last-modified header)
@@ -77,11 +77,13 @@ def single_cycle(last_modified: None) -> (int, str):
         for notification in data:
             try:
                 reason = notification["reason"]
+                identity = notification["id"]
                 name = notification["repository"]["full_name"]
             except Exception as e:
                 print(f"failed to interpret notification from body: \n{body}\n")
                 raise e
 
+            ids.add(identity)
             send_notification(reason, name)
 
         return (int(poll_interval), last_modified)
@@ -91,15 +93,24 @@ def single_cycle(last_modified: None) -> (int, str):
         last_modified = e.headers["Last-Modified"]
 
         if e.code == 304:
-            return (int(poll_interval), last_modified)
+            return (poll_interval, last_modified)
+        else:
+            print(f"got response: {e}")
+            return (None, None)
         raise e
 
 def repeat():
     last_modified = None
+    ids = set()
     while True:
         print("running poll")
-        (p, lm) = single_cycle(last_modified)
+        (poll, lm) = single_cycle(last_modified, ids)
         last_modified = lm
+
+        if poll is None:
+            poll = 60
+
+        p = int(poll)
         print(f"sleeping for {p} seconds")
         time.sleep(p)
 
